@@ -201,10 +201,16 @@ const LB_COLUMNS = [
 ];
 
 function Leaderboard({ games }) {
+  const [lbTab, setLbTab] = useState("overall");
   const [sortKey, setSortKey] = useState("wins");
   const [sortDir, setSortDir] = useState("desc");
 
-  const base = buildLeaderboard(games);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const filteredGames = lbTab === "monthly"
+    ? games.filter(g => g.date && g.date.startsWith(currentMonth))
+    : games;
+
+  const base = buildLeaderboard(filteredGames);
   const data = [...base].sort((a, b) => {
     const av = Number(a[sortKey]);
     const bv = Number(b[sortKey]);
@@ -222,10 +228,19 @@ function Leaderboard({ games }) {
 
   const arrow = (key) => sortKey === key ? (sortDir === "desc" ? " ▼" : " ▲") : "";
 
+  const monthLabel = new Date().toLocaleDateString("en-CA", { month: "long", year: "numeric" });
+
   return (
     <div className="card">
-      <div className="section-label">Leaderboard</div>
-      {!data.length ? <div className="empty">No data yet — play some games.</div> : (
+      <div className="lb-header-row">
+        <div className="section-label" style={{ marginBottom: 0, paddingBottom: 0, border: "none" }}>Leaderboard</div>
+        <div className="lb-tabs">
+          <button className={`lb-tab ${lbTab === "overall" ? "active" : ""}`} onClick={() => setLbTab("overall")}>Overall</button>
+          <button className={`lb-tab ${lbTab === "monthly" ? "active" : ""}`} onClick={() => setLbTab("monthly")}>Monthly</button>
+        </div>
+      </div>
+      {lbTab === "monthly" && <div className="lb-month-label">{monthLabel}</div>}
+      {!data.length ? <div className="empty">{lbTab === "monthly" ? "No games this month yet." : "No data yet — play some games."}</div> : (
         <div className="lb-scroll"><table className="leaderboard-table">
           <thead>
             <tr>
@@ -300,6 +315,13 @@ function GameCard({ game, onDelete, onEdit }) {
             })}
           </div>
           {game.notes && <div className="game-note">"{game.notes}"</div>}
+          {game.venue && (game.venue.location || game.venue.date) && (
+            <div className="game-venue">
+              <span className="game-venue-icon">📍</span>
+              {game.venue.location && <span className="game-venue-detail">{game.venue.location}</span>}
+              {game.venue.date && <span className="game-venue-detail">{fmtDate(game.venue.date)}{game.venue.time ? ` · ${fmtTime(game.venue.time)}` : ""}</span>}
+            </div>
+          )}
           <div className="game-card-actions">
             <button className="btn btn-ghost" style={{ fontSize: "11px", padding: "6px 12px" }} onClick={() => onEdit(game)}>Edit</button>
             {confirmDelete ? (
@@ -327,6 +349,102 @@ function History({ games, onDelete, onEdit }) {
       {!sorted.length
         ? <div className="empty">No games recorded yet.</div>
         : sorted.map(g => <GameCard key={g.id} game={g} onDelete={onDelete} onEdit={onEdit} />)}
+    </div>
+  );
+}
+
+// ─── Next Game Banner ─────────────────────────────────────────────────────────
+const fmtTime = (t) => {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
+};
+
+function NextGameBanner({ nextGame, onEdit }) {
+  const hasInfo = nextGame && (nextGame.location || nextGame.date || nextGame.time);
+  return (
+    <div className="next-game-banner">
+      <div className="next-game-info">
+        <span className="next-game-label">Next game</span>
+        {hasInfo ? (
+          <>
+            {nextGame.location && <span className="next-game-detail next-game-location">{nextGame.location}</span>}
+            {nextGame.date && <span className="next-game-detail next-game-date">{fmtDate(nextGame.date)}</span>}
+            {nextGame.time && <span className="next-game-detail next-game-time">{fmtTime(nextGame.time)}</span>}
+          </>
+        ) : (
+          <span className="next-game-empty">Not scheduled yet</span>
+        )}
+      </div>
+      <button className="btn next-game-edit-btn" onClick={onEdit}>Edit</button>
+    </div>
+  );
+}
+
+function NextGameEditModal({ nextGame, onSave, onClose }) {
+  const [location, setLocation] = useState(nextGame?.location || "");
+  const [date, setDate] = useState(nextGame?.date || "");
+
+  // Parse existing time (HH:MM 24h) into hour/minute/ampm for the picker
+  const parseTime = (t) => {
+    if (!t) return { hour: "7", minute: "00", ampm: "PM" };
+    const [h, m] = t.split(":").map(Number);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const hour = String(h % 12 || 12);
+    const minute = String(m).padStart(2, "0");
+    return { hour, minute, ampm };
+  };
+  const parsed = parseTime(nextGame?.time || "");
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [ampm, setAmpm] = useState(parsed.ampm);
+
+  const buildTime = () => {
+    let h = Number(hour);
+    if (ampm === "PM" && h !== 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${minute}`;
+  };
+
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const minutes = ["00", "15", "30", "45"];
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">Next Game</div>
+        <div className="next-game-field">
+          <label>Location</label>
+          <input type="text" placeholder="e.g. Sarah's place" value={location}
+            onChange={e => setLocation(e.target.value)} autoComplete="off" />
+        </div>
+        <div className="next-game-field">
+          <label>Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div className="next-game-field">
+          <label>Time</label>
+          <div className="time-picker">
+            <select value={hour} onChange={e => setHour(e.target.value)}>
+              {hours.map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <span className="time-colon">:</span>
+            <select value={minute} onChange={e => setMinute(e.target.value)}>
+              {minutes.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select value={ampm} onChange={e => setAmpm(e.target.value)}>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+            </select>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => onSave({ location: location.trim(), date, time: buildTime() })}>Save</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -417,6 +535,7 @@ export default function App() {
   const [editTarget, setEditTarget] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
   const [showManage, setShowManage] = useState(false);
+  const [showNextGameEdit, setShowNextGameEdit] = useState(false);
   const [authed, setAuthed] = useState(false);
 
   // Sign in anonymously once on mount — required by Firestore security rules
@@ -462,6 +581,8 @@ export default function App() {
   }, [toastMsg]);
 
   const activeGames = activeGroupId ? (games[activeGroupId] || []) : [];
+  const activeGroup = groups.find(g => g.id === activeGroupId);
+  const nextGame = activeGroup?.nextGame || null;
 
   // ── Group actions ──
   const createGroup = useCallback(async (name) => {
@@ -487,12 +608,44 @@ export default function App() {
     setEditTarget(null);
   }, [setActiveGroupId]);
 
+  // ── Next game ──
+  const clearNextGame = useCallback(async (groupId) => {
+    if (!groupId) return;
+    await updateDoc(doc(db, "groups", groupId), { nextGame: null });
+  }, []);
+
+  // Auto-expire nextGame 1 hour after start (or midnight if no time set)
+  useEffect(() => {
+    if (!nextGame?.date || !activeGroupId) return;
+    const [y, m, d] = nextGame.date.split("-").map(Number);
+    // Always expire at midnight after the game day
+    const expiry = new Date(y, m - 1, d + 1, 0, 0, 0);
+    const msUntilExpiry = expiry - Date.now();
+    if (msUntilExpiry <= 0) {
+      clearNextGame(activeGroupId);
+      return;
+    }
+    const t = setTimeout(() => clearNextGame(activeGroupId), msUntilExpiry);
+    return () => clearTimeout(t);
+  }, [nextGame, activeGroupId, clearNextGame]);
+
+  const saveNextGame = useCallback(async (nextGameData) => {
+    if (!activeGroupId) return;
+    await updateDoc(doc(db, "groups", activeGroupId), { nextGame: nextGameData });
+    setShowNextGameEdit(false);
+    setToastMsg("Next game saved ✓");
+  }, [activeGroupId]);
+
   // ── Game actions ──
   const saveGame = useCallback(async (game) => {
     if (!activeGroupId) return;
     const { id, ...gameData } = game;
-    await setDoc(doc(db, "games", id), { ...gameData, groupId: activeGroupId });
-  }, [activeGroupId]);
+    // Snapshot the current nextGame into the record so history shows where/when it was played
+    const venue = nextGame ? { location: nextGame.location || "", date: nextGame.date || "", time: nextGame.time || "" } : null;
+    await setDoc(doc(db, "games", id), { ...gameData, groupId: activeGroupId, venue });
+    // Clear the next game banner now that the game has been recorded
+    await clearNextGame(activeGroupId);
+  }, [activeGroupId, clearNextGame, nextGame]);
 
   const deleteGame = useCallback(async (id) => {
     await deleteDoc(doc(db, "games", id));
@@ -538,6 +691,7 @@ export default function App() {
           </div>
         ) : activeGroupId ? (
           <>
+            <NextGameBanner nextGame={nextGame} onEdit={() => setShowNextGameEdit(true)} />
             {/* key forces form reset when switching groups */}
             <GameForm key={activeGroupId} onSave={saveGame} toast={setToastMsg} />
             <Leaderboard games={activeGames} />
@@ -553,6 +707,10 @@ export default function App() {
         )}
 
       </div>
+
+      {showNextGameEdit && (
+        <NextGameEditModal nextGame={nextGame} onSave={saveNextGame} onClose={() => setShowNextGameEdit(false)} />
+      )}
 
       {showManage && (
         <ManageGroupsModal
