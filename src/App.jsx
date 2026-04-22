@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import "./index.css";
+import { db } from "./firebase";
+import { collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot } from "firebase/firestore";
 
 
 // ─── Utilities ─────────────────────────────────────────────────────────────────
@@ -40,25 +42,7 @@ const buildLeaderboard = (games) => {
     .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate);
 };
 
-// ─── Storage ───────────────────────────────────────────────────────────────────
-// Schema: { groups: [{id, name}], games: {groupId: [game]}, activeGroupId: string|null }
-const STORAGE_KEY = "catan-v2";
 
-const loadData = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { }
-  // Migrate from old single-group format
-  try {
-    const old = JSON.parse(localStorage.getItem("catan-games") || "[]");
-    if (old.length) {
-      const g = { id: uid(), name: "Main Group" };
-      return { groups: [g], games: { [g.id]: old }, activeGroupId: g.id };
-    }
-  } catch { }
-  return { groups: [], games: {}, activeGroupId: null };
-};
 
 // ─── Shared form row ───────────────────────────────────────────────────────────
 function PlayerRow({ player, index, onChange, onRemove, canRemove, winStatus }) {
@@ -394,15 +378,42 @@ function ManageGroupsModal({ groups, games, activeGroupId, onCreate, onRename, o
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [data, setData] = useState(loadData);
+  const [groups, setGroups] = useState([]);
+  const [games, setGames] = useState({});
+  const [activeGroupId, setActiveGroupIdRaw] = useState(() => localStorage.getItem("catan-activeGroup") || null);
   const [editTarget, setEditTarget] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
   const [showManage, setShowManage] = useState(false);
 
-  // Persist on every change
+  const setActiveGroupId = useCallback((id) => {
+    setActiveGroupIdRaw(id);
+    if (id) localStorage.setItem("catan-activeGroup", id);
+    else localStorage.removeItem("catan-activeGroup");
+  }, []);
+
+  // Firestore real-time sync
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [data]);
+    const unsubGroups = onSnapshot(collection(db, "groups"), snap => {
+      setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const unsubGames = onSnapshot(collection(db, "games"), snap => {
+      const map = {};
+      snap.docs.forEach(d => {
+        const g = { id: d.id, ...d.data() };
+        if (!map[g.groupId]) map[g.groupId] = [];
+        map[g.groupId].push(g);
+      });
+      setGames(map);
+    });
+    return () => { unsubGroups(); unsubGames(); };
+  }, []);
+
+  // If saved activeGroupId no longer exists in Firestore, switch to first available
+  useEffect(() => {
+    if (groups.length > 0 && activeGroupId && !groups.find(g => g.id === activeGroupId)) {
+      setActiveGroupId(groups[0].id);
+    }
+  }, [groups, activeGroupId, setActiveGroupId]);
 
   // Auto-clear toast
   useEffect(() => {
@@ -411,67 +422,48 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toastMsg]);
 
-  const { groups, games, activeGroupId } = data;
   const activeGames = activeGroupId ? (games[activeGroupId] || []) : [];
 
   // ── Group actions ──
-  const createGroup = useCallback((name) => {
-    const g = { id: uid(), name };
-    setData(prev => ({
-      groups: [...prev.groups, g],
-      games: { ...prev.games, [g.id]: [] },
-      activeGroupId: prev.activeGroupId ?? g.id,
-    }));
+  const createGroup = useCallback(async (name) => {
+    const id = uid();
+    await setDoc(doc(db, "groups", id), { name });
+    setActiveGroupId(id);
     setToastMsg(`"${name}" created`);
+  }, [setActiveGroupId]);
+
+  const renameGroup = useCallback(async (id, name) => {
+    await updateDoc(doc(db, "groups", id), { name });
   }, []);
 
-  const renameGroup = useCallback((id, name) => {
-    setData(prev => ({ ...prev, groups: prev.groups.map(g => g.id === id ? { ...g, name } : g) }));
-  }, []);
-
-  const deleteGroup = useCallback((id) => {
-    setData(prev => {
-      const newGroups = prev.groups.filter(g => g.id !== id);
-      const newGames = { ...prev.games };
-      delete newGames[id];
-      const newActive = prev.activeGroupId === id ? (newGroups[0]?.id ?? null) : prev.activeGroupId;
-      return { groups: newGroups, games: newGames, activeGroupId: newActive };
-    });
+  const deleteGroup = useCallback(async (id) => {
+    await deleteDoc(doc(db, "groups", id));
+    const groupGames = games[id] || [];
+    await Promise.all(groupGames.map(g => deleteDoc(doc(db, "games", g.id))));
     setToastMsg("Group deleted");
-  }, []);
+  }, [games]);
 
   const switchGroup = useCallback((id) => {
-    setData(prev => ({ ...prev, activeGroupId: id }));
+    setActiveGroupId(id);
     setEditTarget(null);
-  }, []);
+  }, [setActiveGroupId]);
 
   // ── Game actions ──
-  const saveGame = useCallback((game) => {
+  const saveGame = useCallback(async (game) => {
     if (!activeGroupId) return;
-    setData(prev => ({
-      ...prev,
-      games: { ...prev.games, [activeGroupId]: [game, ...(prev.games[activeGroupId] || [])] },
-    }));
+    const { id, ...gameData } = game;
+    await setDoc(doc(db, "games", id), { ...gameData, groupId: activeGroupId });
   }, [activeGroupId]);
 
-  const deleteGame = useCallback((id) => {
-    if (!activeGroupId) return;
-    setData(prev => ({
-      ...prev,
-      games: { ...prev.games, [activeGroupId]: (prev.games[activeGroupId] || []).filter(g => g.id !== id) },
-    }));
+  const deleteGame = useCallback(async (id) => {
+    await deleteDoc(doc(db, "games", id));
     setToastMsg("Game deleted.");
-  }, [activeGroupId]);
+  }, []);
 
-  const saveEdit = useCallback((updated) => {
+  const saveEdit = useCallback(async (updated) => {
     if (!activeGroupId) return;
-    setData(prev => ({
-      ...prev,
-      games: {
-        ...prev.games,
-        [activeGroupId]: (prev.games[activeGroupId] || []).map(g => g.id === updated.id ? updated : g),
-      },
-    }));
+    const { id, ...gameData } = updated;
+    await setDoc(doc(db, "games", id), { ...gameData, groupId: activeGroupId });
     setEditTarget(null);
     setToastMsg("Game updated ✓");
   }, [activeGroupId]);
