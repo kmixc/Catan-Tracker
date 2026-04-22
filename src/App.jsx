@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import "./index.css";
-import { db } from "./firebase";
+import { db, auth, signInAnonymously } from "./firebase";
 import { collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot } from "firebase/firestore";
 
 
@@ -384,6 +384,12 @@ export default function App() {
   const [editTarget, setEditTarget] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
   const [showManage, setShowManage] = useState(false);
+  const [authed, setAuthed] = useState(false);
+
+  // Sign in anonymously once on mount — required by Firestore security rules
+  useEffect(() => {
+    signInAnonymously(auth).then(() => setAuthed(true)).catch(console.error);
+  }, []);
 
   const setActiveGroupId = useCallback((id) => {
     setActiveGroupIdRaw(id);
@@ -391,8 +397,9 @@ export default function App() {
     else localStorage.removeItem("catan-activeGroup");
   }, []);
 
-  // Firestore real-time sync
+  // Firestore real-time sync — only after anonymous auth is established
   useEffect(() => {
+    if (!authed) return;
     const unsubGroups = onSnapshot(collection(db, "groups"), snap => {
       setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
@@ -406,7 +413,7 @@ export default function App() {
       setGames(map);
     });
     return () => { unsubGroups(); unsubGames(); };
-  }, []);
+  }, [authed]);
 
   // If saved activeGroupId no longer exists in Firestore, switch to first available
   useEffect(() => {
