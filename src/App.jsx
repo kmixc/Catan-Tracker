@@ -39,7 +39,7 @@ const buildLeaderboard = (games) => {
   });
   return Object.values(map)
     .map(e => ({ ...e, winRate: e.games ? ((e.wins / e.games) * 100).toFixed(0) : 0, avgPts: e.games ? (e.totalPts / e.games).toFixed(1) : 0 }))
-    .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate);
+    .sort((a, b) => b.wins - a.wins || b.totalPts - a.totalPts);
 };
 
 
@@ -192,17 +192,50 @@ function EditModal({ game, onSave, onClose }) {
 }
 
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
+const LB_COLUMNS = [
+  { key: "wins", label: "Wins", numeric: true },
+  { key: "winRate", label: "Win%", numeric: true },
+  { key: "avgPts", label: "Avg pts", numeric: true },
+  { key: "totalPts", label: "Total pts", numeric: true },
+  { key: "games", label: "Games", numeric: true },
+];
+
 function Leaderboard({ games }) {
-  const data = buildLeaderboard(games);
+  const [sortKey, setSortKey] = useState("wins");
+  const [sortDir, setSortDir] = useState("desc");
+
+  const base = buildLeaderboard(games);
+  const data = [...base].sort((a, b) => {
+    const av = Number(a[sortKey]);
+    const bv = Number(b[sortKey]);
+    return sortDir === "desc" ? bv - av : av - bv;
+  });
+
+  const handleSort = (key) => {
+    if (key === sortKey) {
+      setSortDir(d => d === "desc" ? "asc" : "desc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const arrow = (key) => sortKey === key ? (sortDir === "desc" ? " ▼" : " ▲") : "";
+
   return (
     <div className="card">
       <div className="section-label">Leaderboard</div>
       {!data.length ? <div className="empty">No data yet — play some games.</div> : (
-        <table className="leaderboard-table">
+        <div className="lb-scroll"><table className="leaderboard-table">
           <thead>
             <tr>
-              <th>Player</th><th>Wins</th><th>Win%</th>
-              <th>Avg pts</th><th>Total pts</th><th>Games</th>
+              <th>Player</th>
+              {LB_COLUMNS.map(col => (
+                <th key={col.key}
+                  className={`lb-sortable${sortKey === col.key ? " lb-sorted" : ""}`}
+                  onClick={() => handleSort(col.key)}
+                >{col.label}{arrow(col.key)}</th>
+              ))}
               <th className="lb-last">Last played</th>
             </tr>
           </thead>
@@ -225,7 +258,7 @@ function Leaderboard({ games }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </div>
   );
@@ -485,7 +518,7 @@ export default function App() {
         </div>
 
         {/* Group tabs */}
-        <div className="tabs-bar">
+        <div className={`tabs-bar${groups.length > 0 && !activeGroupId ? " tabs-bar--highlight" : ""}`}>
           {groups.map(g => (
             <button key={g.id} className={`tab ${g.id === activeGroupId ? "active" : ""}`} onClick={() => switchGroup(g.id)}>
               {g.name}
@@ -511,7 +544,13 @@ export default function App() {
             <div className="divider" />
             <History games={activeGames} onDelete={deleteGame} onEdit={setEditTarget} />
           </>
-        ) : null}
+        ) : (
+          <div className="no-group-selected">
+            <div className="no-group-arrow">↑</div>
+            <div className="no-group-title">Pick a group above</div>
+            <div className="no-group-sub">Select a group tab to view its games and leaderboard.</div>
+          </div>
+        )}
 
       </div>
 

@@ -140,6 +140,73 @@ body {
   border-color: var(--muted);
 }
 
+/* Highlighted tabs when no group is selected */
+.tabs-bar--highlight .tab {
+  font-size: 14px;
+  padding: 10px 20px 12px;
+  color: var(--text);
+  animation: tab-pulse 2s ease-in-out infinite;
+}
+
+.tabs-bar--highlight .tab:nth-child(2) {
+  animation-delay: .15s;
+}
+
+.tabs-bar--highlight .tab:nth-child(3) {
+  animation-delay: .3s;
+}
+
+@keyframes tab-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: .55;
+  }
+}
+
+/* No group selected prompt */
+.no-group-selected {
+  text-align: center;
+  padding: 72px 20px 60px;
+}
+
+.no-group-arrow {
+  font-size: 48px;
+  color: var(--accent);
+  margin-bottom: 12px;
+  animation: bounce-up 1.4s ease-in-out infinite;
+}
+
+@keyframes bounce-up {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.no-group-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 300;
+  font-size: 26px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.no-group-sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ── Section labels ── */
 .section-label {
   font-size: 9px;
@@ -423,6 +490,20 @@ textarea {
 
 .leaderboard-table th:not(:first-child) {
   text-align: right;
+}
+
+.leaderboard-table th.lb-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.leaderboard-table th.lb-sortable:hover {
+  color: var(--fg);
+}
+
+.leaderboard-table th.lb-sorted {
+  color: var(--accent, #7c6ef2);
 }
 
 .leaderboard-table td {
@@ -794,6 +875,53 @@ textarea {
   transform: translateX(-50%) translateY(0);
 }
 
+/* ── Leaderboard scroll wrapper ── */
+.lb-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+/* ── Mobile ≤ 600px ── */
+@media (max-width: 600px) {
+  .header {
+    padding: 28px 0 20px;
+  }
+
+  /* Bottom-sheet modals */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal {
+    max-width: 100%;
+    border-radius: var(--radius2) var(--radius2) 0 0;
+    max-height: 85vh;
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Allow action rows to wrap */
+  .game-card-actions {
+    flex-wrap: wrap;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  /* Group items: wrap badges & buttons onto next line */
+  .group-item {
+    flex-wrap: wrap;
+  }
+
+  .group-item input {
+    flex-basis: 100%;
+  }
+}
+
+/* ── Mobile ≤ 480px ── */
 @media (max-width: 480px) {
   .card {
     padding: 16px;
@@ -802,9 +930,33 @@ textarea {
   .leaderboard-table th,
   .leaderboard-table td {
     font-size: 11px;
+    padding-right: 6px;
+    white-space: nowrap;
   }
 
+  /* Hide lower-priority leaderboard columns */
   .lb-last {
     display: none;
+  }
+
+  /* Tighten game card header on tiny screens */
+  .game-card-header {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .game-winner {
+    font-size: 15px;
+  }
+
+  .game-date {
+    display: none;
+  }
+
+  /* Toast full-width on small screens */
+  .toast {
+    width: calc(100% - 32px);
+    text-align: center;
+    white-space: normal;
   }
 }
