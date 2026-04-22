@@ -397,9 +397,8 @@ export default function App() {
     else localStorage.removeItem("catan-activeGroup");
   }, []);
 
-  // Firestore real-time sync — only after anonymous auth is established
+  // Firestore real-time sync — starts immediately on mount
   useEffect(() => {
-    if (!authed) return;
     const unsubGroups = onSnapshot(collection(db, "groups"), snap => {
       setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
@@ -413,7 +412,7 @@ export default function App() {
       setGames(map);
     });
     return () => { unsubGroups(); unsubGames(); };
-  }, [authed]);
+  }, []);
 
   // If saved activeGroupId no longer exists in Firestore, switch to first available
   useEffect(() => {
