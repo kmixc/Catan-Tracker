@@ -26,7 +26,7 @@ const deriveResult = (players) => {
 
 const buildLeaderboard = (games) => {
   const map = {};
-  games.forEach(g => {
+  games.filter(g => g.ranked !== false).forEach(g => {
     g.players.forEach(p => {
       if (!p.name.trim()) return;
       if (!map[p.name]) map[p.name] = { name: p.name, wins: 0, games: 0, totalPts: 0, lastDate: "" };
@@ -95,6 +95,8 @@ function GameForm({ onSave, toast }) {
   const [date, setDate] = useState(today());
   const [players, setPlayers] = useState([emptyPlayer(), emptyPlayer(), emptyPlayer()]);
   const [notes, setNotes] = useState("");
+  const [location, setLocation] = useState("");
+  const [ranked, setRanked] = useState(true);
 
   const handleChange = (i, field, val) =>
     setPlayers(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: val } : p));
@@ -106,10 +108,12 @@ function GameForm({ onSave, toast }) {
     const valid = players.filter(p => p.name.trim() && p.points !== "");
     if (valid.length < 2) { toast("Add at least 2 players with names and points."); return; }
     if (!date) { toast("Please pick a date."); return; }
-    onSave({ id: uid(), date, players: valid.map(p => ({ name: p.name.trim(), points: Number(p.points) })), result, notes: notes.trim() });
+    onSave({ id: uid(), date, players: valid.map(p => ({ name: p.name.trim(), points: Number(p.points) })), result, notes: notes.trim(), location: location.trim(), ranked });
     setPlayers([emptyPlayer(), emptyPlayer(), emptyPlayer()]);
     setNotes("");
     setDate(today());
+    setLocation("");
+    setRanked(true);
     toast("Game saved ✓");
   };
 
@@ -131,10 +135,18 @@ function GameForm({ onSave, toast }) {
         </div>
       )}
       <div className="notes-row">
+        <div className="notes-label">Location (optional)</div>
+        <input type="text" placeholder="e.g. Sarah's place" value={location} onChange={e => setLocation(e.target.value)} autoComplete="off" />
+      </div>
+      <div className="notes-row">
         <div className="notes-label">Notes (optional)</div>
         <textarea placeholder="Controversial win? Longest road drama? Immortalize it here." value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
       <div className="form-actions">
+        <button
+          className={`btn ${ranked ? "btn-ranked" : "btn-unranked"}`}
+          onClick={() => setRanked(r => !r)}
+        >{ranked ? "Ranked" : "Unranked"}</button>
         <button className="btn btn-primary" onClick={handleSubmit}>Save Game</button>
       </div>
     </div>
@@ -147,6 +159,8 @@ function EditModal({ game, onSave, onClose }) {
   const [date, setDate] = useState(game.date);
   const [players, setPlayers] = useState(game.players.map(p => ({ id: uid(), name: p.name, points: String(p.points) })));
   const [notes, setNotes] = useState(game.notes || "");
+  const [location, setLocation] = useState(game.location || game.venue?.location || "");
+  const [ranked, setRanked] = useState(game.ranked !== false);
 
   const handleChange = (i, field, val) =>
     setPlayers(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: val } : p));
@@ -157,7 +171,7 @@ function EditModal({ game, onSave, onClose }) {
   const handleSave = () => {
     const valid = players.filter(p => p.name.trim() && p.points !== "");
     if (valid.length < 2) return;
-    onSave({ ...game, date, players: valid.map(p => ({ name: p.name.trim(), points: Number(p.points) })), result, notes: notes.trim() });
+    onSave({ ...game, date, players: valid.map(p => ({ name: p.name.trim(), points: Number(p.points) })), result, notes: notes.trim(), location: location.trim(), ranked });
   };
 
   return (
@@ -179,11 +193,19 @@ function EditModal({ game, onSave, onClose }) {
           </div>
         )}
         <div className="notes-row">
+          <div className="notes-label">Location</div>
+          <input type="text" placeholder="e.g. Sarah's place" value={location} onChange={e => setLocation(e.target.value)} autoComplete="off" />
+        </div>
+        <div className="notes-row">
           <div className="notes-label">Notes</div>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            className={`btn ${ranked ? "btn-ranked" : "btn-unranked"}`}
+            onClick={() => setRanked(r => !r)}
+          >{ranked ? "Ranked" : "Unranked"}</button>
           <button className="btn btn-primary" onClick={handleSave}>Save Changes</button>
         </div>
       </div>
@@ -296,6 +318,9 @@ function GameCard({ game, onDelete, onEdit }) {
             : <span className="tie-label">Tie — {game.result.winners?.join(" & ")}</span>}
         </span>
         <div className="game-meta">
+          {game.ranked === false
+            ? <span className="unranked-badge">unranked</span>
+            : <span className="ranked-badge">ranked</span>}
           {game.notes && <span className="note-badge">note</span>}
           <span className={`chevron ${open ? "open" : ""}`}>▾</span>
         </div>
@@ -315,11 +340,10 @@ function GameCard({ game, onDelete, onEdit }) {
             })}
           </div>
           {game.notes && <div className="game-note">"{game.notes}"</div>}
-          {game.venue && (game.venue.location || game.venue.date) && (
+          {(game.location || game.venue?.location) && (
             <div className="game-venue">
               <span className="game-venue-icon">📍</span>
-              {game.venue.location && <span className="game-venue-detail">{game.venue.location}</span>}
-              {game.venue.date && <span className="game-venue-detail">{fmtDate(game.venue.date)}{game.venue.time ? ` · ${fmtTime(game.venue.time)}` : ""}</span>}
+              <span className="game-venue-detail">{game.location || game.venue.location}</span>
             </div>
           )}
           <div className="game-card-actions">
@@ -366,17 +390,19 @@ function NextGameBanner({ nextGame, onEdit }) {
   const hasInfo = nextGame && (nextGame.location || nextGame.date || nextGame.time);
   return (
     <div className="next-game-banner">
-      <div className="next-game-info">
-        <span className="next-game-label">Next game</span>
-        {hasInfo ? (
-          <>
-            {nextGame.location && <span className="next-game-detail next-game-location">{nextGame.location}</span>}
-            {nextGame.date && <span className="next-game-detail next-game-date">{fmtDate(nextGame.date)}</span>}
-            {nextGame.time && <span className="next-game-detail next-game-time">{fmtTime(nextGame.time)}</span>}
-          </>
-        ) : (
-          <span className="next-game-empty">Not scheduled yet</span>
-        )}
+      <div className="next-game-banner-content">
+        <div className="next-game-info">
+          <span className="next-game-label">Next game</span>
+          {hasInfo ? (
+            <>
+              {nextGame.location && <span className="next-game-detail next-game-location">{nextGame.location}</span>}
+              {nextGame.date && <span className="next-game-detail next-game-date">{fmtDate(nextGame.date)}</span>}
+              {nextGame.time && <span className="next-game-detail next-game-time">{fmtTime(nextGame.time)}</span>}
+            </>
+          ) : (
+            <span className="next-game-empty">Not scheduled yet</span>
+          )}
+        </div>
       </div>
       <button className="btn next-game-edit-btn" onClick={onEdit}>Edit</button>
     </div>
@@ -401,20 +427,38 @@ function NextGameEditModal({ nextGame, onSave, onClose }) {
   const [minute, setMinute] = useState(parsed.minute);
   const [ampm, setAmpm] = useState(parsed.ampm);
 
-  const buildTime = () => {
-    let h = Number(hour);
-    if (ampm === "PM" && h !== 12) h += 12;
-    if (ampm === "AM" && h === 12) h = 0;
-    return `${String(h).padStart(2, "0")}:${minute}`;
+  const buildTime = (h, min, ap) => {
+    let hh = Number(h);
+    if (ap === "PM" && hh !== 12) hh += 12;
+    if (ap === "AM" && hh === 12) hh = 0;
+    return `${String(hh).padStart(2, "0")}:${min}`;
   };
 
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
   const minutes = ["00", "15", "30", "45"];
 
+  const TimePicker = ({ h, setH, min, setMin, ap, setAp }) => (
+    <div className="time-picker">
+      <select value={h} onChange={e => setH(e.target.value)}>
+        {hours.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <span className="time-colon">:</span>
+      <select value={min} onChange={e => setMin(e.target.value)}>
+        {minutes.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <select value={ap} onChange={e => setAp(e.target.value)}>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-title">Next Game</div>
+        <div className="modal-title">Schedule Games</div>
+
+        <div className="next-game-section-label">Next game</div>
         <div className="next-game-field">
           <label>Location</label>
           <input type="text" placeholder="e.g. Sarah's place" value={location}
@@ -426,23 +470,14 @@ function NextGameEditModal({ nextGame, onSave, onClose }) {
         </div>
         <div className="next-game-field">
           <label>Time</label>
-          <div className="time-picker">
-            <select value={hour} onChange={e => setHour(e.target.value)}>
-              {hours.map(h => <option key={h} value={h}>{h}</option>)}
-            </select>
-            <span className="time-colon">:</span>
-            <select value={minute} onChange={e => setMinute(e.target.value)}>
-              {minutes.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <select value={ampm} onChange={e => setAmpm(e.target.value)}>
-              <option value="AM">AM</option>
-              <option value="PM">PM</option>
-            </select>
-          </div>
+          <TimePicker h={hour} setH={setHour} min={minute} setMin={setMinute} ap={ampm} setAp={setAmpm} />
         </div>
+
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave({ location: location.trim(), date, time: buildTime() })}>Save</button>
+          <button className="btn btn-primary" onClick={() => onSave(
+            { location: location.trim(), date, time: buildTime(hour, minute, ampm) }
+          )}>Save</button>
         </div>
       </div>
     </div>
@@ -611,41 +646,24 @@ export default function App() {
   // ── Next game ──
   const clearNextGame = useCallback(async (groupId) => {
     if (!groupId) return;
-    await updateDoc(doc(db, "groups", groupId), { nextGame: null });
+    await updateDoc(doc(db, "groups", groupId), { nextGame: null, nextNextGame: null });
   }, []);
-
-  // Auto-expire nextGame 1 hour after start (or midnight if no time set)
-  useEffect(() => {
-    if (!nextGame?.date || !activeGroupId) return;
-    const [y, m, d] = nextGame.date.split("-").map(Number);
-    // Always expire at midnight after the game day
-    const expiry = new Date(y, m - 1, d + 1, 0, 0, 0);
-    const msUntilExpiry = expiry - Date.now();
-    if (msUntilExpiry <= 0) {
-      clearNextGame(activeGroupId);
-      return;
-    }
-    const t = setTimeout(() => clearNextGame(activeGroupId), msUntilExpiry);
-    return () => clearTimeout(t);
-  }, [nextGame, activeGroupId, clearNextGame]);
 
   const saveNextGame = useCallback(async (nextGameData) => {
     if (!activeGroupId) return;
     await updateDoc(doc(db, "groups", activeGroupId), { nextGame: nextGameData });
     setShowNextGameEdit(false);
-    setToastMsg("Next game saved ✓");
+    setToastMsg("Schedule saved ✓");
   }, [activeGroupId]);
 
   // ── Game actions ──
   const saveGame = useCallback(async (game) => {
     if (!activeGroupId) return;
     const { id, ...gameData } = game;
-    // Snapshot the current nextGame into the record so history shows where/when it was played
-    const venue = nextGame ? { location: nextGame.location || "", date: nextGame.date || "", time: nextGame.time || "" } : null;
-    await setDoc(doc(db, "games", id), { ...gameData, groupId: activeGroupId, venue });
+    await setDoc(doc(db, "games", id), { ...gameData, groupId: activeGroupId });
     // Clear the next game banner now that the game has been recorded
     await clearNextGame(activeGroupId);
-  }, [activeGroupId, clearNextGame, nextGame]);
+  }, [activeGroupId, clearNextGame]);
 
   const deleteGame = useCallback(async (id) => {
     await deleteDoc(doc(db, "games", id));
